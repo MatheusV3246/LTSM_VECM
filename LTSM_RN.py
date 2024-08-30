@@ -1,10 +1,11 @@
 # Importa as bibliotecas necessárias
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dropout, Dense
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.regularizers import l2
 from sklearn.preprocessing import MinMaxScaler
 from VECM import VECM_Model
 
@@ -20,7 +21,7 @@ data_set_scaled = sc.fit_transform(data_set)
 # Prepara os dados para o modelo LSTM
 X = []
 y = []
-backcandles = 6
+backcandles = 30
 
 for i in range(backcandles, len(data_set_scaled)):
     X.append(data_set_scaled[i-backcandles:i, :])
@@ -35,17 +36,22 @@ y_train, y_test = y[:splitlimit], y[splitlimit:]
 
 # Cria o modelo
 model = Sequential()
-model.add(LSTM(units=150, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])))
+model.add(LSTM(units=150, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2]), 
+               kernel_regularizer=l2(0.001)))
 model.add(Dropout(0.2))
-model.add(LSTM(units=150, return_sequences=False))
+model.add(LSTM(units=150, return_sequences=False, kernel_regularizer=l2(0.001)))
 model.add(Dropout(0.2))
 model.add(Dense(units=1, activation='linear'))
 
-# Compila o modelo
-model.compile(optimizer=Adam(), loss='mean_squared_error')
+# Compila o modelo com callbacks para ajuste de taxa de aprendizado e early stopping
+model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error')
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5)
 
 # Treina o modelo
-model.fit(X_train, y_train, epochs=30, batch_size=15, validation_split=0.1, shuffle=True)
+model.fit(X_train, y_train, epochs=100, batch_size=20, validation_split=0.1, 
+          shuffle=True, callbacks=[early_stopping, reduce_lr])
 
 # Faz previsões para todos os dados disponíveis
 y_pred = model.predict(X)
